@@ -1,0 +1,7 @@
+key,type,encoding,value
+settings,namespace,,
+wifi_ssid,data,string,
+wifi_password,data,string,
+hostname,data,string,
+device_name,data,string,
+access_token,data,string,
