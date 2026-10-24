@@ -17,10 +17,20 @@ import {
   receiverIdentity
 } from './uxplayRuntime'
 import { UXPLAY_PID_MARKER, UXPLAY_SUPERVISOR_SOURCE } from './uxplaySupervisor'
+import { AudioCapture } from './audioCapture'
 
 const initialState: AirplayState = { phase: 'stopped', serviceName: null, error: null, pid: null }
 
 export class AirplayService {
+  private audioCapture = new AudioCapture()
+
+  captureAudio(durationMs: number, signal: AbortSignal): Promise<Buffer> {
+    if (!this.config?.audioEnabled || !this.child)
+      throw new Error(
+        'AirPlay audio reception is disabled or the receiver is stopped. Enable it and reconnect iPhone first.'
+      )
+    return this.audioCapture.record(durationMs, signal)
+  }
   private child: ChildProcess | null = null
   private sockets: RtpSocketPair[] = []
   private target: WebContents | null = null
@@ -272,6 +282,7 @@ export class AirplayService {
       target.send('airplay:video', chunk)
     }
     for (const chunk of this.audio.drain(now)) {
+      this.audioCapture.push(chunk)
       if (!this.receivedAudio) {
         this.receivedAudio = true
         this.emitOutput('First L16 audio samples received (44100 Hz, stereo)')
@@ -288,6 +299,7 @@ export class AirplayService {
   }
 
   private resetMedia(): void {
+    this.audioCapture.reset()
     this.depacketizer.reset()
     this.audio.reset()
     this.videoClock.reset()

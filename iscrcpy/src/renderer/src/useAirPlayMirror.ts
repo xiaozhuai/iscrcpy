@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { AirplayState, AirplayVideoChunk } from '../../shared/airplay'
 import { AudioPlayout } from './audioPlayout'
+import type { PhoneFrame } from '../../shared/mcp'
 
 const MAX_DECODE_QUEUE = 12
 const initialAirplayState: AirplayState = {
@@ -37,10 +38,15 @@ export interface AirPlayMirror {
   decoderError: string | null
   hasVideo: boolean
   videoSize: { width: number; height: number } | null
+  frameInfo: () => { width: number; height: number; capturedAt: number } | null
+  captureFrame: (maxWidth?: number, maxAgeMs?: number) => PhoneFrame
 }
 
 export function useAirPlayMirror(muted = false): AirPlayMirror {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const captureCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const lastPreviewRef = useRef<HTMLCanvasElement | null>(null)
+  const lastFrameAtRef = useRef(0)
   const decoderRef = useRef<VideoDecoder | null>(null)
   const codecRef = useRef<string | null>(null)
   const pendingFrameRef = useRef<VideoFrame[]>([])
@@ -58,6 +64,19 @@ export function useAirPlayMirror(muted = false): AirPlayMirror {
     audioRef.current?.setMuted(muted)
   }, [muted])
 
+  // The player stays alive on the Settings page. Restore its last frame when
+  // the preview remounts instead of waiting for the phone to change its screen.
+  useLayoutEffect(() => {
+    const preview = canvasRef.current,
+      capture = captureCanvasRef.current
+    if (preview !== lastPreviewRef.current && preview && capture && lastFrameAtRef.current) {
+      preview.width = capture.width
+      preview.height = capture.height
+      preview.getContext('2d', { alpha: false })?.drawImage(capture, 0, 0)
+    }
+    lastPreviewRef.current = preview
+  })
+
   useEffect(() => {
     let disposed = false
     let videoStreamId: number | null = null
@@ -69,6 +88,9 @@ export function useAirPlayMirror(muted = false): AirPlayMirror {
     window.addEventListener('keydown', resumeAudio)
 
     const clearCanvas = (): void => {
+      lastFrameAtRef.current = 0
+      const capture = captureCanvasRef.current
+      capture?.getContext('2d')?.clearRect(0, 0, capture.width, capture.height)
       setHasVideo(false)
       hasVideoRef.current = false
       setVideoSize(null)
@@ -105,11 +127,7 @@ export function useAirPlayMirror(muted = false): AirPlayMirror {
         frame = frames.shift()!
       }
       if (frames.length) renderFrameRef.current = requestAnimationFrame(drawPendingFrame)
-      const canvas = canvasRef.current
-      if (!canvas) {
-        frame.close()
-        return
-      }
+      const canvas = (captureCanvasRef.current ??= document.createElement('canvas'))
 
       const context = canvas.getContext('2d', {
         alpha: false,
@@ -127,6 +145,13 @@ export function useAirPlayMirror(muted = false): AirPlayMirror {
         canvas.height = targetHeight
       }
       context.drawImage(frame, 0, 0, targetWidth, targetHeight)
+      lastFrameAtRef.current = Date.now()
+      const preview = canvasRef.current
+      if (preview) {
+        if (preview.width !== targetWidth) preview.width = targetWidth
+        if (preview.height !== targetHeight) preview.height = targetHeight
+        preview.getContext('2d', { alpha: false })?.drawImage(canvas, 0, 0)
+      }
       const sourceWidth = frame.displayWidth
       const sourceHeight = frame.displayHeight
       frame.close()
@@ -263,6 +288,34 @@ export function useAirPlayMirror(muted = false): AirPlayMirror {
     state,
     decoderError,
     hasVideo,
-    videoSize
+    videoSize,
+    frameInfo: () => {
+      const canvas = captureCanvasRef.current
+      return canvas && lastFrameAtRef.current
+        ? { width: canvas.width, height: canvas.height, capturedAt: lastFrameAtRef.current }
+        : null
+    },
+    captureFrame: (maxWidth = 1024, maxAgeMs = 2500) => {
+      const canvas = captureCanvasRef.current
+      const capturedAt = lastFrameAtRef.current
+      if (!canvas || !capturedAt || Date.now() - capturedAt > maxAgeMs)
+        throw new Error(
+          'No fresh iPhone frame. Connect AirPlay and update the phone screen before capturing.'
+        )
+      const scale = Math.min(1, maxWidth / canvas.width)
+      const image = document.createElement('canvas')
+      image.width = Math.max(1, Math.round(canvas.width * scale))
+      image.height = Math.max(1, Math.round(canvas.height * scale))
+      image.getContext('2d')!.drawImage(canvas, 0, 0, image.width, image.height)
+      return {
+        data: image.toDataURL('image/png').split(',')[1],
+        mimeType: 'image/png',
+        width: image.width,
+        height: image.height,
+        sourceWidth: canvas.width,
+        sourceHeight: canvas.height,
+        capturedAt
+      }
+    }
   }
 }

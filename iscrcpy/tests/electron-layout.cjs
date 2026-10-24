@@ -176,9 +176,73 @@ async function run() {
       'device switch'
     )
     assertPortrait(await geometry())
+    await js(`document.querySelector('button[aria-label="设置"]').click()`)
+    await until(
+      () =>
+        js(
+          `[...document.querySelectorAll('[role="menuitem"]')].some(item => item.textContent.trim() === '设置')`
+        ),
+      'Settings menu'
+    )
+    await js(
+      `[...document.querySelectorAll('[role="menuitem"]')].find(item => item.textContent.trim() === '设置').click()`
+    )
+    await until(
+      () => js('!!document.querySelector("input[aria-label=监听地址]")'),
+      'MCP listener fields'
+    )
+    const switchCursors =
+      await js(`Array.from(document.querySelectorAll('input[role="switch"]'), input => ({
+      disabled: input.disabled,
+      cursor: getComputedStyle(input.nextElementSibling).cursor
+    }))`)
+    assert.ok(
+      switchCursors.some((value) => !value.disabled),
+      'settings include enabled switches'
+    )
+    assert.ok(
+      switchCursors.some((value) => value.disabled),
+      'fixture includes a disabled MCP switch'
+    )
+    for (const value of switchCursors) {
+      assert.equal(
+        value.cursor,
+        value.disabled ? 'not-allowed' : 'pointer',
+        'switch cursor reflects interactivity'
+      )
+    }
+    for (const width of [820, 1120, 1440]) {
+      window.setContentSize(width, 900)
+      await until(() => js(`innerWidth === ${width}`), 'settings window resized')
+      await sleep(60)
+      const fields = await js(`(() => {
+        const host = document.querySelector('input[aria-label="监听地址"]')
+        const port = document.querySelector('input[aria-label="端口"]')
+        const rect = element => {
+          const { top, bottom, left, right } = element.getBoundingClientRect()
+          return { top, bottom, left, right }
+        }
+        return { host: rect(host), port: rect(port),
+          hint: rect(document.getElementById(host.getAttribute('aria-describedby'))),
+          card: rect(host.closest('.utility-card')) }
+      })()`)
+      assert.ok(
+        Math.abs(fields.host.top - fields.port.top) < 1,
+        'address and port inputs share the top edge'
+      )
+      assert.ok(
+        Math.abs(fields.host.bottom - fields.port.bottom) < 1,
+        'address and port inputs share the bottom edge'
+      )
+      assert.ok(
+        fields.hint.top >= fields.host.bottom && fields.hint.top >= fields.port.bottom,
+        'address hint sits below both inputs'
+      )
+      assert.ok(fields.port.right <= fields.card.right, 'listener inputs fit the settings card')
+    }
     assert.deepEqual(errors, [], 'renderer must not log errors')
     console.log(
-      'PASS: portrait three-column / landscape stacked layouts; live rotations without player restart; square frames; 820/1440px windows; device switch'
+      'PASS: portrait three-column / landscape stacked layouts; live rotations without player restart; square frames; 820/1440px windows; device switch; MCP listener fields aligned at 820/1120/1440px; enabled/disabled switch cursors'
     )
   } finally {
     window?.destroy()

@@ -6,6 +6,16 @@ import Bonjour, { type Browser, type Service } from 'bonjour-service'
 import icon from '../../resources/icon.png?asset'
 import { normalizeAirplayConfig } from '../shared/airplay'
 import { AirplayService } from './airplay'
+import { randomBytes } from 'node:crypto'
+import { McpBridge } from './mcpBridge'
+import { McpService } from './mcpService'
+import {
+  DEFAULT_MCP_PORT,
+  DEFAULT_MCP_HOST,
+  normalizeMcpHost,
+  validateMcpConfiguration,
+  type McpReply
+} from '../shared/mcp'
 
 const storageFiles = {
   devices: 'devices.json',
@@ -14,6 +24,38 @@ const storageFiles = {
 
 let storageWriteQueue = Promise.resolve()
 const airplayService = new AirplayService()
+const mcpBridge = new McpBridge()
+const mcpService = new McpService((method, params, signal) =>
+  method === 'capture_audio'
+    ? airplayService.captureAudio(Number(params.durationMs), signal)
+    : mcpBridge.call(method, params, signal)
+)
+let mcpConfigurationQueue: Promise<unknown> = Promise.resolve()
+mcpService.on('state', (state) => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send('mcp:state', state)
+  }
+})
+
+function setMcpPaused(paused: boolean): Promise<unknown> {
+  // Cancel before waiting for any pending preference write.
+  mcpService.setPaused(paused)
+  const operation = async (): Promise<unknown> => {
+    const state = mcpService.getState()
+    await queueStorageWrite('mcp.json', {
+      version: 1,
+      enabled: state.enabled,
+      host: state.host,
+      port: state.port,
+      token: state.token,
+      paused: state.paused
+    })
+    return mcpService.getState()
+  }
+  const result = mcpConfigurationQueue.then(operation, operation)
+  mcpConfigurationQueue = result.catch(() => undefined)
+  return result
+}
 
 interface DiscoveredDevice {
   id: string
@@ -165,6 +207,7 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })
+  mcpBridge.attach(mainWindow.webContents)
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
@@ -218,7 +261,72 @@ app.whenReady().then(() => {
     if (typeof message === 'string') airplayService.reportRendererLog(message.slice(0, 500))
   })
 
+  ipcMain.handle('mcp:state', () => mcpService.getState())
+  ipcMain.handle('mcp:set-paused', (event, paused: unknown) => {
+    if (event.senderFrame !== event.sender.mainFrame || typeof paused !== 'boolean')
+      throw new Error('Invalid MCP pause state')
+    return setMcpPaused(paused)
+  })
+  ipcMain.handle('mcp:manual-takeover', (event) => {
+    if (event.senderFrame !== event.sender.mainFrame)
+      throw new Error('Invalid manual takeover request')
+    const state = mcpService.getState()
+    if (!state.enabled || state.paused) return state
+    return setMcpPaused(true)
+  })
+  ipcMain.on('mcp:ready', (event) => {
+    if (event.senderFrame === event.sender.mainFrame) mcpBridge.ready(event.sender)
+  })
+  ipcMain.on('mcp:reply', (event, reply: McpReply) => {
+    if (event.senderFrame === event.sender.mainFrame) mcpBridge.reply(event.sender, reply)
+  })
+  ipcMain.handle('mcp:configure', (event, value: unknown) => {
+    if (event.senderFrame !== event.sender.mainFrame || !value || typeof value !== 'object')
+      throw new Error('Invalid MCP configuration')
+    const operation = async (): Promise<unknown> => {
+      const config = validateMcpConfiguration(value, mcpService.getState())
+      const token =
+        config.rotateToken === true ? randomBytes(32).toString('hex') : mcpService.getState().token
+      // Revocation must work even if saving preferences fails (e.g. disk full).
+      mcpBridge.cancelAll()
+      await mcpService.stop()
+      mcpService.configureInactive(config.port, token, mcpService.getState().paused, config.host)
+      await queueStorageWrite('mcp.json', {
+        version: 1,
+        enabled: config.enabled,
+        host: config.host,
+        port: config.port,
+        token,
+        paused: mcpService.getState().paused
+      })
+      if (config.enabled)
+        return mcpService.start(config.port, token, mcpService.getState().paused, config.host)
+      return mcpService.getState()
+    }
+    const result = mcpConfigurationQueue.then(operation, operation)
+    mcpConfigurationQueue = result.catch(() => undefined)
+    return result
+  })
+
   createWindow()
+  mcpConfigurationQueue = readStorageFile('mcp.json')
+    .then(async (value) => {
+      const config = value as Record<string, unknown> | null
+      if (config?.version !== 1) return
+      const port = Number(config.port ?? DEFAULT_MCP_PORT)
+      if (!Number.isInteger(port) || port < 1 || port > 65535 || typeof config.token !== 'string')
+        return
+      const paused = config.paused === true
+      const host = normalizeMcpHost(config.host ?? DEFAULT_MCP_HOST)
+      if (config.enabled === true) await mcpService.start(port, config.token, paused, host)
+      else mcpService.configureInactive(port, config.token, paused, host)
+    })
+    .catch((error) =>
+      console.error(
+        'Could not start local MCP service:',
+        error instanceof Error ? error.message : 'unknown error'
+      )
+    )
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
@@ -233,6 +341,8 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  mcpBridge.cancelAll()
+  void mcpService.stop()
   airplayService.dispose()
 })
 

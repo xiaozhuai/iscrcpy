@@ -9,6 +9,7 @@ import { Notifications } from '@mantine/notifications'
 import App from './App'
 
 const theme = createTheme({
+  cursorType: 'pointer',
   primaryColor: 'blue',
   defaultRadius: 'md',
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',

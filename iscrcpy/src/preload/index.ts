@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { McpState, McpRequest, McpReply, McpConfiguration } from '../shared/mcp'
 import type {
   AirplayAudioChunk,
   AirplayConfig,
@@ -9,6 +10,31 @@ import type {
 
 // Custom APIs for renderer
 const api = {
+  mcp: {
+    getState: (): Promise<McpState> => ipcRenderer.invoke('mcp:state'),
+    setPaused: (paused: boolean): Promise<McpState> => ipcRenderer.invoke('mcp:set-paused', paused),
+    pauseForTakeover: (): Promise<McpState> => ipcRenderer.invoke('mcp:manual-takeover'),
+    configure: (value: McpConfiguration): Promise<McpState> =>
+      ipcRenderer.invoke('mcp:configure', value),
+    ready: (): void => ipcRenderer.send('mcp:ready'),
+    reply: (value: McpReply): void => ipcRenderer.send('mcp:reply', value),
+    onState: (listener: (state: McpState) => void): (() => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, state: McpState): void => listener(state)
+      ipcRenderer.on('mcp:state', wrapped)
+      return () => ipcRenderer.removeListener('mcp:state', wrapped)
+    },
+    onRequest: (listener: (request: McpRequest) => void): (() => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, request: McpRequest): void =>
+        listener(request)
+      ipcRenderer.on('mcp:request', wrapped)
+      return () => ipcRenderer.removeListener('mcp:request', wrapped)
+    },
+    onCancel: (listener: (id: string) => void): (() => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, id: string): void => listener(id)
+      ipcRenderer.on('mcp:cancel', wrapped)
+      return () => ipcRenderer.removeListener('mcp:cancel', wrapped)
+    }
+  },
   discoverDevices: (): Promise<DiscoveredDevice[]> => ipcRenderer.invoke('devices:discover'),
   storage: {
     load: (): Promise<{ devices: unknown | null; settings: unknown | null }> =>

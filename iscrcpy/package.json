@@ -14,6 +14,7 @@
     "test": "node --require ./tests/register-ts.cjs --test tests/*.test.cjs",
     "test:electron": "electron tests/electron-smoke.cjs",
     "test:layout": "electron tests/electron-layout.cjs",
+    "test:mcp": "electron tests/electron-mcp.cjs",
     "icons:generate": "electron scripts/generate-icons.cjs",
     "runtime:prepare": "node scripts/prepare-runtime.mjs",
     "runtime:update": "node scripts/prepare-runtime.mjs --update",
@@ -32,9 +33,12 @@
     "@mantine/core": "^9.7.3",
     "@mantine/hooks": "^9.7.3",
     "@mantine/notifications": "^9.7.3",
+    "@modelcontextprotocol/node": "^2.1.2",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@tabler/icons-react": "^3.36.1",
     "bonjour-service": "^1.4.4",
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.1",

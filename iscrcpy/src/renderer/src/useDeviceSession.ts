@@ -25,6 +25,7 @@ interface DeviceSession extends SessionState {
   connect: () => void
   disconnect: () => void
   send: (message: Record<string, unknown>) => boolean
+  flush: () => Promise<void>
   appendLog: (message: string) => void
   clearLogs: () => void
 }
@@ -64,6 +65,10 @@ export function useDeviceSession(
   const pingTimerRef = useRef<number | null>(null)
   const pingSequenceRef = useRef(0)
   const pingTimesRef = useRef(new Map<number, number>())
+  const fencesRef = useRef(
+    new Map<number, { resolve(): void; reject(error: Error): void; timer: number }>()
+  )
+  const inputErrorRef = useRef<string | null>(null)
   const connectRef = useRef<() => void>(() => undefined)
   const translatorRef = useRef(t)
   const deviceNameHandlerRef = useRef(onDeviceName)
@@ -88,6 +93,11 @@ export function useDeviceSession(
   }, [inputTarget])
 
   const stopTimers = useCallback(() => {
+    for (const fence of fencesRef.current.values()) {
+      window.clearTimeout(fence.timer)
+      fence.reject(new Error('Device connection closed'))
+    }
+    fencesRef.current.clear()
     if (reconnectRef.current !== null) window.clearTimeout(reconnectRef.current)
     if (pingTimerRef.current !== null) window.clearInterval(pingTimerRef.current)
     reconnectRef.current = null
@@ -101,6 +111,22 @@ export function useDeviceSession(
     socket.send(JSON.stringify(message))
     return true
   }, [])
+
+  const flush = useCallback((): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const seq = ++pingSequenceRef.current
+      const timer = window.setTimeout(() => {
+        fencesRef.current.delete(seq)
+        reject(new Error('Device input acknowledgement timed out'))
+      }, 2000)
+      fencesRef.current.set(seq, { resolve, reject, timer })
+      if (!send({ type: 'ping', seq })) {
+        window.clearTimeout(timer)
+        fencesRef.current.delete(seq)
+        reject(new Error('Device disconnected'))
+      }
+    })
+  }, [send])
 
   const scheduleReconnect = useCallback(() => {
     const device = deviceRef.current
@@ -130,6 +156,7 @@ export function useDeviceSession(
     stopTimers()
     manualCloseRef.current = false
     authenticatedRef.current = false
+    inputErrorRef.current = null
     setState((current) => ({
       ...current,
       phase: 'connecting',
@@ -232,6 +259,14 @@ export function useDeviceSession(
         }))
       } else if (message.type === 'pong') {
         const sequence = Number(message.seq)
+        const fence = fencesRef.current.get(sequence)
+        if (fence) {
+          fencesRef.current.delete(sequence)
+          window.clearTimeout(fence.timer)
+          if (inputErrorRef.current) fence.reject(new Error(inputErrorRef.current))
+          else fence.resolve()
+          inputErrorRef.current = null
+        }
         const sentAt = pingTimesRef.current.get(sequence)
         if (sentAt !== undefined) {
           pingTimesRef.current.delete(sequence)
@@ -243,6 +278,7 @@ export function useDeviceSession(
           logs: [...current.logs.slice(-999), message.message as string]
         }))
       } else if (message.type === 'error') {
+        inputErrorRef.current = String(message.message ?? message.code ?? 'Device input rejected')
         const code = String(message.code ?? '')
         if (
           code === 'unauthorized' ||
@@ -286,6 +322,11 @@ export function useDeviceSession(
       const wasAuthenticated = authenticatedRef.current
       socketRef.current = null
       authenticatedRef.current = false
+      for (const fence of fencesRef.current.values()) {
+        window.clearTimeout(fence.timer)
+        fence.reject(new Error('Device connection closed'))
+      }
+      fencesRef.current.clear()
       if (pingTimerRef.current !== null) window.clearInterval(pingTimerRef.current)
       pingTimerRef.current = null
       pingTimesRef.current.clear()
@@ -363,6 +404,7 @@ export function useDeviceSession(
     connect,
     disconnect,
     send,
+    flush,
     appendLog,
     clearLogs
   }

@@ -178,6 +178,23 @@ as required for every connection.
 The device panel shows firmware version, protocol version, display aspect ratio, USB
 and Bluetooth connection state, latency, and combined firmware and AirPlay logs.
 
+### AI control through MCP
+
+Enable **Settings > AI control / MCP** to expose the selected phone to a local AI
+client. Tools cover device/receiver management, phone-only screenshots, on-demand
+iPhone audio, calibrated pointer gestures and HID keyboard input. The server is off
+by default and uses a loopback endpoint with a Bearer token. The listen address and
+port are configurable; non-loopback listening requires a security warning, and
+changes while running require a confirmed MCP restart. Remote HTTP is unencrypted:
+use a trusted network only and never expose it to the Internet. When MCP is enabled,
+a pause/resume icon in the device toolbar cancels operations and releases input
+without changing the MCP Settings switch. Pausing also blocks screenshots/audio
+capture and is remembered across app restarts. Manual controls take priority; the
+Settings switch can fully disable MCP at any time.
+
+Relative mouse input requires measured calibration, periodic edge homing and visual
+verification. See the [MCP setup, tools and calibration guide](iscrcpy/README.md#mcp-let-an-ai-client-operate-the-phone).
+
 ## Build and validate
 
 Validate the desktop project:

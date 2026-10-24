@@ -150,15 +150,27 @@ const messages = {
     language: '语言',
     backToDevices: '返回设备',
     settingsDescription: '管理应用的全局连接行为',
+    autoPauseAiOnCapture: '人工接管时自动暂停 AI 访问',
+    autoPauseAiOnCaptureDescription:
+      '进入预览锁定区域接管操作时，自动暂停 AI 访问；退出锁定后需手动恢复。默认关闭。',
+    aiTakeoverTitle: '人工接管将暂停 AI 访问',
+    aiTakeoverHint:
+      '如果 MCP 已开启，进入锁定区域后会暂停 AI 访问，取消当前 AI 操作，并阻止 AI 获取手机画面和音频。退出锁定不会自动恢复 AI 访问，可通过顶部按钮手动恢复。MCP 设置开关不会改变。',
+    aiTakeoverConfirm: '继续并接管',
+    aiTakeoverPauseFailed: '未能暂停 AI 访问，已退出锁定。请重试或先手动暂停 AI。',
     autoReconnectDescription: '连接意外断开后自动尝试重新连接；关闭后会立即取消等待中的重连',
     reconnectInterval: '重连间隔',
     reconnectIntervalDescription: '两次自动重连之间等待的时间，范围为 1–300 秒',
     seconds: '秒',
     about: '关于',
     aboutDescription: '查看产品与运行环境信息',
-    aboutVersion: 'iPhone 键盘与鼠标控制',
+    aboutVersion: 'iPhone 屏幕镜像、键鼠操作与 AI 控制',
     aboutTechnology:
-      '通过局域网 WebSocket 将键盘和鼠标输入发送到 iscrcpy 硬件，再由 USB 或 BLE HID 转发到 iPhone。',
+      '通过局域网将键盘和鼠标操作发送至 iscrcpy 硬件，再以 USB 或蓝牙 HID 控制 iPhone。',
+    aboutAirplay:
+      '使用 uxplay-mini 接收 AirPlay 音视频，实时预览 iPhone 画面并播放声音，支持横竖屏布局自动切换。',
+    aboutMcp:
+      '内置 MCP 服务，可向 AI 客户端提供手机截图、音频获取、键鼠操作与设备管理能力；支持鼠标位置校准、定期回零和人工接管。MCP 默认关闭，默认监听本机回环地址，可配置监听地址，并使用令牌认证。',
     sidebarMenu: '设备库菜单',
     deviceMenu: '设备菜单',
     groupMenu: '分组菜单',
@@ -310,15 +322,27 @@ const messages = {
     language: '語言',
     backToDevices: '返回裝置',
     settingsDescription: '管理應用程式的全域連線行為',
+    autoPauseAiOnCapture: '手動接管時自動暫停 AI 存取',
+    autoPauseAiOnCaptureDescription:
+      '進入預覽鎖定區域接管操作時，自動暫停 AI 存取；結束鎖定後需手動恢復。預設關閉。',
+    aiTakeoverTitle: '手動接管將暫停 AI 存取',
+    aiTakeoverHint:
+      '若 MCP 已啟用，進入鎖定區域後會暫停 AI 存取、取消目前 AI 操作，並阻止 AI 擷取手機畫面和音訊。結束鎖定不會自動恢復 AI 存取，可透過頂部按鈕手動恢復。MCP 設定開關不會改變。',
+    aiTakeoverConfirm: '繼續並接管',
+    aiTakeoverPauseFailed: '無法暫停 AI 存取，已結束鎖定。請重試或先手動暫停 AI。',
     autoReconnectDescription: '連線意外中斷後自動嘗試重新連線；關閉後會立即取消等待中的重新連線',
     reconnectInterval: '重新連線間隔',
     reconnectIntervalDescription: '兩次自動重新連線之間等待的時間，範圍為 1–300 秒',
     seconds: '秒',
     about: '關於',
     aboutDescription: '查看產品與執行環境資訊',
-    aboutVersion: 'iPhone 鍵盤與滑鼠控制',
+    aboutVersion: 'iPhone 螢幕鏡像、鍵鼠操作與 AI 控制',
     aboutTechnology:
-      '透過區域網路 WebSocket 將鍵盤和滑鼠輸入傳送到 iscrcpy 硬體，再由 USB 或 BLE HID 轉送到 iPhone。',
+      '透過區域網路將鍵盤和滑鼠操作傳送至 iscrcpy 硬體，再以 USB 或藍牙 HID 控制 iPhone。',
+    aboutAirplay:
+      '使用 uxplay-mini 接收 AirPlay 音訊與視訊，即時預覽 iPhone 畫面並播放聲音，支援橫向與直向版面自動切換。',
+    aboutMcp:
+      '內建 MCP 服務，可向 AI 用戶端提供手機截圖、音訊擷取、鍵鼠操作與裝置管理能力；支援滑鼠位置校準、定期歸零及手動接管。MCP 預設關閉，預設監聽本機回環位址，可設定監聽位址，並使用權杖驗證。',
     sidebarMenu: '裝置庫選單',
     deviceMenu: '裝置選單',
     groupMenu: '分組選單',
@@ -476,6 +500,15 @@ const messages = {
     language: 'Language',
     backToDevices: 'Back to devices',
     settingsDescription: 'Manage global connection behavior for the app',
+    autoPauseAiOnCapture: 'Automatically pause AI access on manual takeover',
+    autoPauseAiOnCaptureDescription:
+      'Automatically pause AI access when entering preview pointer lock. Leaving pointer lock does not resume AI. Off by default.',
+    aiTakeoverTitle: 'Manual takeover will pause AI access',
+    aiTakeoverHint:
+      'If MCP is enabled, entering pointer lock pauses AI access, cancels current AI operations and blocks phone screenshots and audio capture. Leaving pointer lock does not resume AI; use the toolbar button to resume manually. The MCP Settings switch stays unchanged.',
+    aiTakeoverConfirm: 'Continue and take over',
+    aiTakeoverPauseFailed:
+      'Could not pause AI access; pointer lock was released. Retry or pause AI manually first.',
     autoReconnectDescription:
       'Retry after an unexpected disconnect; turning this off also cancels a pending retry',
     reconnectInterval: 'Reconnect interval',
@@ -484,9 +517,13 @@ const messages = {
     seconds: 's',
     about: 'About',
     aboutDescription: 'Product and runtime information',
-    aboutVersion: 'iPhone keyboard and mouse control',
+    aboutVersion: 'iPhone mirroring, keyboard/mouse input and AI control',
     aboutTechnology:
-      'Sends keyboard and mouse input over a local WebSocket connection to iscrcpy hardware, then forwards it to iPhone over USB or BLE HID.',
+      'Sends keyboard and mouse input over the local network to iscrcpy hardware, which controls iPhone through USB or Bluetooth HID.',
+    aboutAirplay:
+      'Receives AirPlay video and audio through uxplay-mini, with live iPhone screen preview, audio playback and automatic portrait/landscape layouts.',
+    aboutMcp:
+      'Built-in MCP gives AI clients phone screenshots, audio capture, keyboard/mouse input and device management tools, with pointer calibration, periodic homing and manual takeover. MCP is disabled by default, uses token authentication and defaults to a configurable loopback listener.',
     sidebarMenu: 'Device library menu',
     deviceMenu: 'Device menu',
     groupMenu: 'Group menu',

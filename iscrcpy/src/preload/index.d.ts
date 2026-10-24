@@ -6,11 +6,23 @@ import type {
   AirplayVideoChunk
 } from '../shared/airplay'
 import type { DiscoveredDevice } from './index'
+import type { McpState, McpRequest, McpReply, McpConfiguration } from '../shared/mcp'
 
 declare global {
   interface Window {
     electron: ElectronAPI
     api: {
+      mcp: {
+        getState: () => Promise<McpState>
+        setPaused: (paused: boolean) => Promise<McpState>
+        pauseForTakeover: () => Promise<McpState>
+        configure: (value: McpConfiguration) => Promise<McpState>
+        ready: () => void
+        reply: (value: McpReply) => void
+        onState: (listener: (state: McpState) => void) => () => void
+        onRequest: (listener: (request: McpRequest) => void) => () => void
+        onCancel: (listener: (id: string) => void) => () => void
+      }
       discoverDevices: () => Promise<DiscoveredDevice[]>
       storage: {
         load: () => Promise<{ devices: unknown | null; settings: unknown | null }>

@@ -74,6 +74,9 @@ import type {
 } from './types'
 import { useAirPlayMirror } from './useAirPlayMirror'
 import { useDeviceSession } from './useDeviceSession'
+import { usePhoneMcp } from './usePhoneMcp'
+import type { PhoneInput } from './phoneInput'
+import { McpPanel, McpAccessButton } from './McpPanel'
 
 const GROUP_DRAG_TYPE = 'application/x-iscrcpy-group'
 const DEVICE_DRAG_TYPE = 'application/x-iscrcpy-device'
@@ -312,6 +315,9 @@ interface StoredSettings {
   target: Target
   collapsedGroups: string[]
   hideFullKeyboardAccessNotice: boolean
+  autoPauseAiOnCapture: boolean
+  hideAiTakeoverNotice: boolean
+  pointerProfiles: unknown[]
 }
 
 function normalizeStoredSettings(value: unknown): StoredSettings | null {
@@ -338,7 +344,10 @@ function normalizeStoredSettings(value: unknown): StoredSettings | null {
     collapsedGroups: Array.isArray(value.collapsedGroups)
       ? value.collapsedGroups.filter((item): item is string => typeof item === 'string')
       : [],
-    hideFullKeyboardAccessNotice: value.hideFullKeyboardAccessNotice === true
+    hideFullKeyboardAccessNotice: value.hideFullKeyboardAccessNotice === true,
+    autoPauseAiOnCapture: value.autoPauseAiOnCapture === true,
+    hideAiTakeoverNotice: value.hideAiTakeoverNotice === true,
+    pointerProfiles: Array.isArray(value.pointerProfiles) ? value.pointerProfiles.slice(0, 100) : []
   }
 }
 
@@ -709,34 +718,41 @@ function DeviceDialog({
 }
 
 interface PreviewProps {
+  mirror: ReturnType<typeof useAirPlayMirror>
   device: Device
   target: Target
   connected: boolean
-  audioMuted: boolean
   send: (message: Record<string, unknown>) => boolean
   onCaptureChange: (captured: boolean) => void
+  autoPauseAiOnCapture: boolean
+  hideAiTakeoverNotice: boolean
+  onHideAiTakeoverNoticeChange: (hidden: boolean) => void
   onAirplayPidChange: (deviceId: string, pid: number | null) => void
   onVideoSizeChange: (deviceId: string, size: { width: number; height: number } | null) => void
   t: (key: TranslationKey, variables?: Record<string, string | number>) => string
 }
 
 function PreviewSurface({
+  mirror,
   device,
   target,
   connected,
-  audioMuted,
   send,
   onCaptureChange,
+  autoPauseAiOnCapture,
+  hideAiTakeoverNotice,
+  onHideAiTakeoverNoticeChange,
   onAirplayPidChange,
   onVideoSizeChange,
   t
 }: PreviewProps): React.JSX.Element {
-  const mirror = useAirPlayMirror(audioMuted)
   const areaRef = useRef<HTMLDivElement>(null)
   const surfaceRef = useRef<HTMLDivElement>(null)
   const pressedRef = useRef(new Map<string, number>())
   const mouseRef = useRef({ x: 0, y: 0, wheel: 0, pan: 0, frame: 0, last: 0 })
   const [captured, setCaptured] = useState(false)
+  const [takeoverNoticeOpened, setTakeoverNoticeOpened] = useState(false)
+  const [rememberTakeoverNotice, setRememberTakeoverNotice] = useState(false)
   const [frameSize, setFrameSize] = useState({ width: 220, height: 478 })
   const resetMouse = useCallback(() => {
     const pending = mouseRef.current
@@ -850,6 +866,18 @@ function PreviewSurface({
           ? t('airplayError')
           : t('airplayWaiting')
   const mirrorError = mirror.decoderError ?? mirror.state.error
+  const requestCapture = (): void => {
+    if (!connected || document.pointerLockElement === surfaceRef.current) return
+    surfaceRef.current?.focus({ preventScroll: true })
+    handlePointerLockRequest(surfaceRef.current?.requestPointerLock(), () => {
+      notifications.show({
+        id: 'pointer-lock-cooldown',
+        message: t('pointerLockCooldown'),
+        color: 'yellow',
+        autoClose: 2200
+      })
+    })
+  }
   return (
     <div className="preview-area" ref={areaRef}>
       <div
@@ -859,15 +887,10 @@ function PreviewSurface({
         tabIndex={0}
         onClick={() => {
           if (!connected || document.pointerLockElement === surfaceRef.current) return
-          surfaceRef.current?.focus({ preventScroll: true })
-          handlePointerLockRequest(surfaceRef.current?.requestPointerLock(), () => {
-            notifications.show({
-              id: 'pointer-lock-cooldown',
-              message: t('pointerLockCooldown'),
-              color: 'yellow',
-              autoClose: 2200
-            })
-          })
+          if (autoPauseAiOnCapture && !hideAiTakeoverNotice) {
+            setRememberTakeoverNotice(false)
+            setTakeoverNoticeOpened(true)
+          } else requestCapture()
         }}
         onKeyDown={(event) => {
           const usage = keyUsages[event.code]
@@ -984,6 +1007,39 @@ function PreviewSurface({
             </div>
           ))}
       </div>
+      <Modal
+        opened={takeoverNoticeOpened && connected && autoPauseAiOnCapture}
+        onClose={() => setTakeoverNoticeOpened(false)}
+        title={t('aiTakeoverTitle')}
+        size="sm"
+        centered
+        returnFocus={false}
+      >
+        <Stack gap="md">
+          <Text size="sm">{t('aiTakeoverHint')}</Text>
+          <Checkbox
+            label={t('doNotShowAgain')}
+            checked={rememberTakeoverNotice}
+            onChange={(event) => setRememberTakeoverNotice(event.currentTarget.checked)}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setTakeoverNoticeOpened(false)}>
+              {t('cancel')}
+            </Button>
+            <Button
+              onClick={() => {
+                setTakeoverNoticeOpened(false)
+                if (rememberTakeoverNotice) onHideAiTakeoverNoticeChange(true)
+                // Request synchronously in the confirmation gesture: awaiting IPC
+                // here could lose Chromium's transient user activation.
+                requestCapture()
+              }}
+            >
+              {t('aiTakeoverConfirm')}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </div>
   )
 }
@@ -997,23 +1053,29 @@ type AppPage = 'devices' | 'settings' | 'about'
 type Translator = (key: TranslationKey, variables?: Record<string, string | number>) => string
 
 interface SettingsPageProps {
+  locale: Locale
   target: Target
   autoReconnect: boolean
   reconnectInterval: number
+  autoPauseAiOnCapture: boolean
   t: Translator
   onTargetChange: (target: Target) => void
   onAutoReconnectChange: (enabled: boolean) => void
   onReconnectIntervalChange: (seconds: number) => void
+  onAutoPauseAiOnCaptureChange: (enabled: boolean) => void
 }
 
 function SettingsPage({
+  locale,
   target,
   autoReconnect,
   reconnectInterval,
+  autoPauseAiOnCapture,
   t,
   onTargetChange,
   onAutoReconnectChange,
-  onReconnectIntervalChange
+  onReconnectIntervalChange,
+  onAutoPauseAiOnCaptureChange
 }: SettingsPageProps): React.JSX.Element {
   return (
     <div className="utility-page">
@@ -1085,6 +1147,11 @@ function SettingsPage({
           />
         </Group>
       </Paper>
+      <McpPanel
+        locale={locale}
+        autoPauseAiOnCapture={autoPauseAiOnCapture}
+        onAutoPauseAiOnCaptureChange={onAutoPauseAiOnCaptureChange}
+      />
     </div>
   )
 }
@@ -1119,6 +1186,12 @@ function AboutPage({ t }: AboutPageProps): React.JSX.Element {
         </Group>
         <Divider my="lg" />
         <Text size="sm">{t('aboutTechnology')}</Text>
+        <Text size="sm" mt="sm">
+          {t('aboutAirplay')}
+        </Text>
+        <Text size="sm" mt="sm">
+          {t('aboutMcp')}
+        </Text>
         <Text size="xs" c="dimmed" mt="md">
           Electron {versions.electron} · Chromium {versions.chrome} · Node {versions.node}
         </Text>
@@ -1144,6 +1217,9 @@ function App(): React.JSX.Element {
   const [logKind, setLogKind] = useState<'device' | 'airplay'>('device')
   const [airplayLogs, setAirplayLogs] = useState<string[]>([])
   const [audioMuted, setAudioMuted] = useState(false)
+  const mirror = useAirPlayMirror(audioMuted)
+  const mcpInputRef = useRef<PhoneInput | null>(null)
+  const [pointerProfiles, setPointerProfiles] = useState<unknown[]>([])
   const [target, setTarget] = useState<Target>('usb_preferred')
   const [autoReconnect, setAutoReconnect] = useState(true)
   const [reconnectInterval, setReconnectInterval] = useState(5)
@@ -1164,6 +1240,9 @@ function App(): React.JSX.Element {
   const [rememberFullKeyboardAccessNotice, setRememberFullKeyboardAccessNotice] = useState(false)
   const [pendingShortcut, setPendingShortcut] = useState<SystemShortcut | null>(null)
   const [previewCaptured, setPreviewCaptured] = useState(false)
+  const [autoPauseAiOnCapture, setAutoPauseAiOnCapture] = useState(false)
+  const [hideAiTakeoverNotice, setHideAiTakeoverNotice] = useState(false)
+  const captureEpochRef = useRef(0)
   const [airplayRestarting, setAirplayRestarting] = useState(false)
   const [airplayProcess, setAirplayProcess] = useState<{
     deviceId: string
@@ -1177,6 +1256,7 @@ function App(): React.JSX.Element {
   const airplayConfigRef = useRef<AirplayConfig | undefined>(undefined)
   const pendingConnectIdRef = useRef<string | null>(null)
   const shortcutBusyRef = useRef(false)
+  const manualInputRef = useRef({ keys: new Set<number>(), buttons: new Set<string>(), until: 0 })
   const storageErrorShownRef = useRef(false)
   const logViewportRef = useRef<HTMLDivElement>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([])
@@ -1201,6 +1281,9 @@ function App(): React.JSX.Element {
           setAddressMode(storedSettings.addressMode)
           setCollapsedGroups(storedSettings.collapsedGroups)
           setFullKeyboardAccessNoticeDisabled(storedSettings.hideFullKeyboardAccessNotice)
+          setAutoPauseAiOnCapture(storedSettings.autoPauseAiOnCapture)
+          setHideAiTakeoverNotice(storedSettings.hideAiTakeoverNotice)
+          setPointerProfiles(storedSettings.pointerProfiles)
         }
       })
       .catch((error: unknown) => {
@@ -1227,7 +1310,10 @@ function App(): React.JSX.Element {
       reconnectIntervalSeconds: reconnectInterval,
       addressMode,
       collapsedGroups,
-      hideFullKeyboardAccessNotice: fullKeyboardAccessNoticeDisabled
+      hideFullKeyboardAccessNotice: fullKeyboardAccessNoticeDisabled,
+      autoPauseAiOnCapture,
+      hideAiTakeoverNotice,
+      pointerProfiles
     }
     void Promise.all([
       window.api.storage.saveDevices({
@@ -1244,10 +1330,13 @@ function App(): React.JSX.Element {
       }
     })
   }, [
+    pointerProfiles,
     addressMode,
     autoReconnect,
     collapsedGroups,
     fullKeyboardAccessNoticeDisabled,
+    autoPauseAiOnCapture,
+    hideAiTakeoverNotice,
     library,
     locale,
     reconnectInterval,
@@ -1310,6 +1399,61 @@ function App(): React.JSX.Element {
     reconnectInterval * 1000,
     target
   )
+  const sendToDevice = session.send
+  const manualSend = useCallback(
+    (message: Record<string, unknown>): boolean => {
+      if (message.type !== 'get_status' && message.type !== 'ping') {
+        mcpInputRef.current?.invalidate()
+        const manual = manualInputRef.current
+        manual.until = Date.now() + 300
+        if (message.type === 'key') {
+          if (message.action === 'down') manual.keys.add(Number(message.usage))
+          else manual.keys.delete(Number(message.usage))
+        } else if (message.type === 'mouse_button') {
+          if (message.pressed) manual.buttons.add(String(message.button))
+          else manual.buttons.delete(String(message.button))
+        } else if (message.type === 'release_all') {
+          manual.keys.clear()
+          manual.buttons.clear()
+        }
+      }
+      return sendToDevice(message)
+    },
+    [sendToDevice]
+  )
+  const isManualBusy = useCallback(
+    (): boolean =>
+      document.pointerLockElement !== null ||
+      shortcutBusyRef.current ||
+      manualInputRef.current.keys.size > 0 ||
+      manualInputRef.current.buttons.size > 0 ||
+      Date.now() < manualInputRef.current.until,
+    []
+  )
+  const handlePreviewCaptureChange = useCallback(
+    (active: boolean): void => {
+      setPreviewCaptured(active)
+      const epoch = ++captureEpochRef.current
+      if (!active) return
+      mcpInputRef.current?.invalidate()
+      if (!autoPauseAiOnCapture) return
+      void window.api.mcp.pauseForTakeover().catch(() => {
+        if (epoch !== captureEpochRef.current || !document.pointerLockElement) return
+        document.exitPointerLock()
+        notifications.show({
+          color: 'red',
+          message: translatorRef.current('aiTakeoverPauseFailed')
+        })
+      })
+    },
+    [autoPauseAiOnCapture]
+  )
+  useEffect(() => {
+    if (!session.isConnected) {
+      manualInputRef.current.keys.clear()
+      manualInputRef.current.buttons.clear()
+    }
+  }, [session.isConnected])
   useEffect(() => {
     return window.api.airplay.onLog((message) => {
       setAirplayLogs((current) => [...current.slice(-999), message])
@@ -1345,7 +1489,7 @@ function App(): React.JSX.Element {
       void window.api.airplay.stop()
     }
   }, [selectedDevice?.id, selectedDevice?.name, session.isConnected])
-  const sessionSend = session.send
+  const sessionSend = manualSend
   const sessionConnected = session.isConnected
   const sendShortcut = useCallback(
     (usages: readonly number[]): void => {
@@ -1402,6 +1546,36 @@ function App(): React.JSX.Element {
     pendingConnectIdRef.current = id
     setSelectedId(id)
   }
+
+  usePhoneMcp({
+    storageReady,
+    library,
+    setLibrary,
+    selectedId,
+    select: (id) => {
+      setPage('devices')
+      setSelectedId(id)
+    },
+    connect: connectDevice,
+    session,
+    mirror,
+    target,
+    setTarget,
+    locale,
+    setLocale,
+    autoReconnect,
+    setAutoReconnect,
+    reconnectInterval,
+    setReconnectInterval,
+    muted: audioMuted,
+    setMuted: setAudioMuted,
+    manual: previewCaptured,
+    isManualBusy,
+    airplayLogs,
+    controllerRef: mcpInputRef,
+    profiles: pointerProfiles,
+    saveProfiles: setPointerProfiles
+  })
 
   const toggleDeviceConnection = (id: string): void => {
     if (
@@ -1809,9 +1983,11 @@ function App(): React.JSX.Element {
       <main className="workspace">
         {page === 'settings' ? (
           <SettingsPage
+            locale={locale}
             target={target}
             autoReconnect={autoReconnect}
             reconnectInterval={reconnectInterval}
+            autoPauseAiOnCapture={autoPauseAiOnCapture}
             t={t}
             onTargetChange={(nextTarget) => {
               if (nextTarget === target) return
@@ -1823,6 +1999,7 @@ function App(): React.JSX.Element {
               if (!enabled && session.reconnectPending) session.disconnect()
             }}
             onReconnectIntervalChange={setReconnectInterval}
+            onAutoPauseAiOnCaptureChange={setAutoPauseAiOnCapture}
           />
         ) : page === 'about' ? (
           <AboutPage t={t} />
@@ -1876,6 +2053,7 @@ function App(): React.JSX.Element {
                     {t('captureExit')}
                   </Badge>
                 )}
+                <McpAccessButton locale={locale} />
                 <Tooltip label={t('editDevice')}>
                   <ActionIcon
                     variant="default"
@@ -1954,12 +2132,16 @@ function App(): React.JSX.Element {
               className={`device-content${portraitPreview ? ' device-content--portrait' : ''}`}
             >
               <PreviewSurface
+                key={`${selectedDevice.id}:${session.isConnected}`}
+                mirror={mirror}
                 device={selectedDevice}
                 target={target}
                 connected={session.isConnected}
-                audioMuted={audioMuted}
-                send={session.send}
-                onCaptureChange={setPreviewCaptured}
+                send={manualSend}
+                onCaptureChange={handlePreviewCaptureChange}
+                autoPauseAiOnCapture={autoPauseAiOnCapture}
+                hideAiTakeoverNotice={hideAiTakeoverNotice}
+                onHideAiTakeoverNoticeChange={setHideAiTakeoverNotice}
                 onAirplayPidChange={updateAirplayPid}
                 onVideoSizeChange={updateVideoSize}
                 t={t}
