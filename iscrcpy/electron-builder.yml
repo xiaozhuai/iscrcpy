@@ -9,6 +9,20 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{scripts,tests}/**'
+  - '!resources/uxplay-mini/**'
+  - '!.cache/**'
+beforePack: scripts/before-pack.cjs
+extraResources:
+  - from: resources/uxplay-mini/${os}-${arch}
+    to: uxplay-mini
+    filter:
+      - uxplay-mini
+      - uxplay-mini.exe
+      - LICENSE
+      - UPSTREAM.md
+      - playfair-LICENSE.md
+      - runtime.json
 asarUnpack:
   - resources/**
 win:

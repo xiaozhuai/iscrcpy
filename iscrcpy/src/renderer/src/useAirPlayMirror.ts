@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { AirplayState, AirplayVideoChunk } from '../../shared/airplay'
+import { AudioPlayout } from './audioPlayout'
 
 const MAX_DECODE_QUEUE = 12
 const initialAirplayState: AirplayState = {
@@ -38,20 +39,34 @@ export interface AirPlayMirror {
   videoSize: { width: number; height: number } | null
 }
 
-export function useAirPlayMirror(): AirPlayMirror {
+export function useAirPlayMirror(muted = false): AirPlayMirror {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const decoderRef = useRef<VideoDecoder | null>(null)
   const codecRef = useRef<string | null>(null)
-  const pendingFrameRef = useRef<VideoFrame | null>(null)
+  const pendingFrameRef = useRef<VideoFrame[]>([])
   const renderFrameRef = useRef(0)
   const hasVideoRef = useRef(false)
+  const audioRef = useRef<AudioPlayout | null>(null)
+  const mutedRef = useRef(muted)
   const [state, setState] = useState<AirplayState>(initialAirplayState)
   const [decoderError, setDecoderError] = useState<string | null>(null)
   const [hasVideo, setHasVideo] = useState(false)
   const [videoSize, setVideoSize] = useState<{ width: number; height: number } | null>(null)
 
+  useLayoutEffect(() => {
+    mutedRef.current = muted
+    audioRef.current?.setMuted(muted)
+  }, [muted])
+
   useEffect(() => {
     let disposed = false
+    let videoStreamId: number | null = null
+    const audio = new AudioPlayout((message) => window.api.airplay.reportLog(message))
+    audio.setMuted(mutedRef.current)
+    audioRef.current = audio
+    const resumeAudio = (): void => audio.resume()
+    window.addEventListener('pointerdown', resumeAudio)
+    window.addEventListener('keydown', resumeAudio)
 
     const clearCanvas = (): void => {
       setHasVideo(false)
@@ -67,8 +82,8 @@ export function useAirPlayMirror(): AirPlayMirror {
         cancelAnimationFrame(renderFrameRef.current)
         renderFrameRef.current = 0
       }
-      pendingFrameRef.current?.close()
-      pendingFrameRef.current = null
+      for (const frame of pendingFrameRef.current) frame.close()
+      pendingFrameRef.current = []
       const decoder = decoderRef.current
       decoderRef.current = null
       codecRef.current = null
@@ -76,24 +91,23 @@ export function useAirPlayMirror(): AirPlayMirror {
       if (clear) clearCanvas()
     }
 
-    const clearVisibleFrame = (): void => {
-      if (renderFrameRef.current) {
-        cancelAnimationFrame(renderFrameRef.current)
-        renderFrameRef.current = 0
-      }
-      pendingFrameRef.current?.close()
-      pendingFrameRef.current = null
-      clearCanvas()
-      window.api.airplay.reportLog('Cleared visible frame while waiting')
-    }
-
     const drawPendingFrame = (): void => {
       renderFrameRef.current = 0
-      const frame = pendingFrameRef.current
-      pendingFrameRef.current = null
+      const frames = pendingFrameRef.current
+      if (!frames.length) return
+      if ((audio.videoDelayMs(frames[0].timestamp) ?? 0) > 2) {
+        renderFrameRef.current = requestAnimationFrame(drawPendingFrame)
+        return
+      }
+      let frame = frames.shift()!
+      while (frames.length && (audio.videoDelayMs(frames[0].timestamp) ?? 0) <= 2) {
+        frame.close()
+        frame = frames.shift()!
+      }
+      if (frames.length) renderFrameRef.current = requestAnimationFrame(drawPendingFrame)
       const canvas = canvasRef.current
-      if (!frame || !canvas) {
-        frame?.close()
+      if (!canvas) {
+        frame.close()
         return
       }
 
@@ -130,8 +144,12 @@ export function useAirPlayMirror(): AirPlayMirror {
     }
 
     const scheduleFrame = (frame: VideoFrame): void => {
-      pendingFrameRef.current?.close()
-      pendingFrameRef.current = frame
+      if (disposed) {
+        frame.close()
+        return
+      }
+      pendingFrameRef.current.push(frame)
+      while (pendingFrameRef.current.length > 12) pendingFrameRef.current.shift()!.close()
       if (!renderFrameRef.current) {
         renderFrameRef.current = requestAnimationFrame(drawPendingFrame)
       }
@@ -174,6 +192,10 @@ export function useAirPlayMirror(): AirPlayMirror {
 
     const decode = (chunk: AirplayVideoChunk): void => {
       if (disposed) return
+      if (videoStreamId !== chunk.streamId) {
+        closeDecoder()
+        videoStreamId = chunk.streamId
+      }
       const decoder = decoderIsConfigured(chunk)
       if (!decoder || decoder.state !== 'configured') return
       if (decoder.decodeQueueSize > MAX_DECODE_QUEUE) {
@@ -202,14 +224,15 @@ export function useAirPlayMirror(): AirPlayMirror {
     const removeStateListener = window.api.airplay.onState((nextState) => {
       if (disposed) return
       setState(nextState)
-      if (nextState.phase === 'waiting') {
-        clearVisibleFrame()
-      } else if (
+      if (
+        nextState.phase === 'waiting' ||
         nextState.phase === 'starting' ||
         nextState.phase === 'stopped' ||
         nextState.phase === 'error'
       ) {
         closeDecoder()
+        audio.reset()
+        videoStreamId = null
       }
       if (nextState.phase === 'starting' || nextState.phase === 'stopped') {
         setDecoderError(null)
@@ -218,11 +241,19 @@ export function useAirPlayMirror(): AirPlayMirror {
       }
     })
     const removeVideoListener = window.api.airplay.onVideo(decode)
+    const removeAudioListener = window.api.airplay.onAudio((chunk) => {
+      if (!disposed) audio.push(chunk)
+    })
 
     return () => {
       disposed = true
       removeStateListener()
       removeVideoListener()
+      removeAudioListener()
+      window.removeEventListener('pointerdown', resumeAudio)
+      window.removeEventListener('keydown', resumeAudio)
+      audio.dispose()
+      if (audioRef.current === audio) audioRef.current = null
       closeDecoder(false)
     }
   }, [])

@@ -1,6 +1,9 @@
+import { parseRtp } from './rtp'
+
 export interface H264AccessUnit {
   data: Buffer
-  timestampUs: number
+  rtpTimestamp: number
+  ssrc: number
   keyframe: boolean
 }
 
@@ -23,13 +26,13 @@ export class H264RtpDepacketizer {
   private fragment: Buffer | null = null
   private fragmentType: number | null = null
   private discardUntilMarker = false
-  private lastTimestampUs = 0
+  private ssrc: number | null = null
   private sps: Buffer | null = null
   private pps: Buffer | null = null
 
   reset(): void {
     this.lastSequence = null
-    this.lastTimestampUs = 0
+    this.ssrc = null
     this.discardUntilMarker = false
     this.clearAccessUnit()
     this.sps = null
@@ -37,29 +40,33 @@ export class H264RtpDepacketizer {
   }
 
   push(packet: Buffer): H264AccessUnit[] {
-    if (packet.length < 12) return []
+    const parsed = parseRtp(packet)
+    if (!parsed || parsed.payloadType !== 96) return []
+    if (parsed.ssrc !== this.ssrc) {
+      this.reset()
+      this.ssrc = parsed.ssrc
+    }
 
-    const sequence = packet.readUInt16BE(2)
+    const sequence = parsed.sequence
     if (!this.acceptSequence(sequence)) return []
 
-    const timestamp = packet.readUInt32BE(4)
+    const timestamp = parsed.timestamp
     const completed: H264AccessUnit[] = []
     if (this.currentTimestamp !== null && timestamp !== this.currentTimestamp) {
       const accessUnit = this.completeAccessUnit()
       if (accessUnit) completed.push(accessUnit)
     }
 
-    const payload = this.payload(packet)
-    if (!payload || payload.length === 0) return completed
+    const payload = parsed.payload
     if (this.discardUntilMarker) {
-      if ((packet[1] & 0x80) !== 0) this.discardUntilMarker = false
+      if (parsed.marker) this.discardUntilMarker = false
       return completed
     }
 
     if (this.currentTimestamp === null) this.currentTimestamp = timestamp
     this.pushH264Payload(payload)
 
-    if ((packet[1] & 0x80) !== 0) {
+    if (parsed.marker) {
       this.clearFragment()
       const accessUnit = this.completeAccessUnit()
       if (accessUnit) completed.push(accessUnit)
@@ -87,23 +94,6 @@ export class H264RtpDepacketizer {
       this.discardUntilMarker = true
     }
     return true
-  }
-
-  private payload(packet: Buffer): Buffer | null {
-    const csrcCount = packet[0] & 0x0f
-    let offset = 12 + csrcCount * 4
-    if ((packet[0] & 0x10) !== 0) {
-      if (packet.length < offset + 4) return null
-      const extensionWords = packet.readUInt16BE(offset + 2)
-      offset += 4 + extensionWords * 4
-    }
-    let end = packet.length
-    if ((packet[0] & 0x20) !== 0) {
-      const padding = packet[end - 1]
-      if (padding === 0 || padding > end - offset) return null
-      end -= padding
-    }
-    return end > offset ? packet.subarray(offset, end) : null
   }
 
   private pushH264Payload(payload: Buffer): void {
@@ -176,6 +166,7 @@ export class H264RtpDepacketizer {
 
   private completeAccessUnit(): H264AccessUnit | null {
     const nals = this.currentNals
+    const rtpTimestamp = this.currentTimestamp
     const hasVcl = nals.some((nal) => {
       const type = nalType(nal)
       return type >= 1 && type <= 5
@@ -191,19 +182,15 @@ export class H264RtpDepacketizer {
         : nals
 
     this.clearAccessUnit()
-    if (!hasVcl || normalized.length === 0) return null
+    if (!hasVcl || normalized.length === 0 || rtpTimestamp === null || this.ssrc === null)
+      return null
 
     return {
       data: Buffer.concat(normalized.map(withStartCode)),
-      timestampUs: this.nextTimestampUs(),
+      rtpTimestamp,
+      ssrc: this.ssrc,
       keyframe
     }
-  }
-
-  private nextTimestampUs(): number {
-    const now = Number(process.hrtime.bigint() / 1000n)
-    this.lastTimestampUs = Math.max(now, this.lastTimestampUs + 1)
-    return this.lastTimestampUs
   }
 
   private discardCurrentAccessUnit(): void {

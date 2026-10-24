@@ -1,5 +1,10 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { AirplayConfig, AirplayState, AirplayVideoChunk } from '../shared/airplay'
+import type {
+  AirplayAudioChunk,
+  AirplayConfig,
+  AirplayState,
+  AirplayVideoChunk
+} from '../shared/airplay'
 import type { DiscoveredDevice } from './index'
 
 declare global {
@@ -15,9 +20,10 @@ declare global {
       airplay: {
         start: (deviceName: string, config: AirplayConfig) => Promise<AirplayState>
         stop: () => Promise<void>
-        restart: () => Promise<AirplayState>
+        restart: (config?: AirplayConfig) => Promise<AirplayState>
         onState: (listener: (state: AirplayState) => void) => () => void
         onVideo: (listener: (chunk: AirplayVideoChunk) => void) => () => void
+        onAudio: (listener: (chunk: AirplayAudioChunk) => void) => () => void
         onLog: (listener: (message: string) => void) => () => void
         reportLog: (message: string) => void
       }

@@ -34,4 +34,15 @@ export interface AirplayVideoChunk {
   data: Uint8Array
   timestampUs: number
   keyframe: boolean
+  streamId: number
+}
+
+// uxplay-mini outputs RTP L16: signed big-endian PCM, 44.1 kHz, stereo.
+// The main process converts to interleaved Float32 before crossing IPC.
+export interface AirplayAudioChunk {
+  samples: Float32Array
+  timestampUs: number
+  sampleRate: 44100
+  channels: 2
+  streamId: number
 }

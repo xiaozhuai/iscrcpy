@@ -155,7 +155,10 @@ function createWindow(): void {
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      // An AirPlay sender initiates playback remotely, without a renderer gesture.
+      autoplayPolicy: 'no-user-gesture-required',
+      backgroundThrottling: false
     }
   })
 
@@ -204,7 +207,9 @@ app.whenReady().then(() => {
     return airplayService.start(deviceName, normalizeAirplayConfig(config), event.sender)
   })
   ipcMain.handle('airplay:stop', () => airplayService.stop())
-  ipcMain.handle('airplay:restart', () => airplayService.restart())
+  ipcMain.handle('airplay:restart', (_event, config: unknown) =>
+    airplayService.restart(config === undefined ? undefined : normalizeAirplayConfig(config))
+  )
   ipcMain.on('airplay:renderer-log', (_, message: unknown) => {
     if (typeof message === 'string') airplayService.reportRendererLog(message.slice(0, 500))
   })

@@ -1,5 +1,4 @@
 import {
-  Accordion,
   ActionIcon,
   Badge,
   Button,
@@ -22,16 +21,11 @@ import {
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import {
-  IconAccessible,
   IconActivityHeartbeat,
-  IconAdjustments,
   IconAdjustmentsHorizontal,
-  IconApps,
   IconArrowLeft,
-  IconBell,
   IconBluetooth,
   IconBroadcast,
-  IconCamera,
   IconChevronDown,
   IconChevronRight,
   IconCirclePlus,
@@ -57,6 +51,8 @@ import {
   IconSettings,
   IconTrash,
   IconUsb,
+  IconVolume,
+  IconVolumeOff,
   IconWifi
 } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -199,52 +195,16 @@ const systemShortcuts = [
     usages: [keyUsages.MetaLeft, keyUsages.KeyH]
   },
   {
-    label: 'shortcutAppSwitcher',
-    keys: '⌘Tab',
-    icon: IconApps,
-    usages: [keyUsages.MetaLeft, keyUsages.Tab]
-  },
-  {
-    label: 'shortcutControlCenter',
-    keys: '⌃⌘C',
-    icon: IconAdjustments,
-    usages: [keyUsages.ControlLeft, keyUsages.MetaLeft, keyUsages.KeyC]
-  },
-  {
-    label: 'shortcutNotificationCenter',
-    keys: '⌃⌘N',
-    icon: IconBell,
-    usages: [keyUsages.ControlLeft, keyUsages.MetaLeft, keyUsages.KeyN]
-  },
-  {
     label: 'shortcutLockScreen',
     keys: '⌃⌘Q',
     icon: IconLock,
     usages: [keyUsages.ControlLeft, keyUsages.MetaLeft, keyUsages.KeyQ]
   },
   {
-    label: 'shortcutRestart',
-    keys: '⌃⌘R',
-    icon: IconReload,
-    usages: [keyUsages.ControlLeft, keyUsages.MetaLeft, keyUsages.KeyR]
-  },
-  {
-    label: 'shortcutAccessibility',
-    keys: '⌥⌘F5',
-    icon: IconAccessible,
-    usages: [keyUsages.AltLeft, keyUsages.MetaLeft, keyUsages.F5]
-  },
-  {
     label: 'shortcutSearch',
     keys: '⌘Space',
     icon: IconSearch,
     usages: [keyUsages.MetaLeft, keyUsages.Space]
-  },
-  {
-    label: 'shortcutScreenshot',
-    keys: '⇧⌘3',
-    icon: IconCamera,
-    usages: [keyUsages.MetaLeft, keyUsages.ShiftLeft, keyUsages.Digit3]
   }
 ] as const satisfies ReadonlyArray<{
   label: TranslationKey
@@ -751,6 +711,7 @@ interface PreviewProps {
   device: Device
   target: Target
   connected: boolean
+  audioMuted: boolean
   send: (message: Record<string, unknown>) => boolean
   onCaptureChange: (captured: boolean) => void
   onAirplayPidChange: (deviceId: string, pid: number | null) => void
@@ -762,13 +723,14 @@ function PreviewSurface({
   device,
   target,
   connected,
+  audioMuted,
   send,
   onCaptureChange,
   onAirplayPidChange,
   onVideoSizeChange,
   t
 }: PreviewProps): React.JSX.Element {
-  const mirror = useAirPlayMirror()
+  const mirror = useAirPlayMirror(audioMuted)
   const areaRef = useRef<HTMLDivElement>(null)
   const surfaceRef = useRef<HTMLDivElement>(null)
   const pressedRef = useRef(new Map<string, number>())
@@ -790,7 +752,6 @@ function PreviewSurface({
     resetMouse()
     pressedRef.current.clear()
   }, [connected, resetMouse, send, target])
-  useEffect(() => () => resetMouse(), [resetMouse])
   useEffect(() => {
     const area = areaRef.current
     if (!area) return
@@ -832,10 +793,11 @@ function PreviewSurface({
   }, [device.id, mirror.videoSize, onVideoSizeChange])
   useEffect(
     () => () => {
+      release()
       if (document.pointerLockElement === surfaceRef.current) document.exitPointerLock()
       onCaptureChange(false)
     },
-    [onCaptureChange]
+    [onCaptureChange, release]
   )
   useEffect(() => resetMouse(), [resetMouse, target])
   function flushMouse(time: number): void {
@@ -1182,6 +1144,7 @@ function App(): React.JSX.Element {
   const [library, setLibrary] = useState<LibraryState>({ groups: [], devices: [] })
   const [logKind, setLogKind] = useState<'device' | 'airplay'>('device')
   const [airplayLogs, setAirplayLogs] = useState<string[]>([])
+  const [audioMuted, setAudioMuted] = useState(false)
   const [target, setTarget] = useState<Target>('usb_preferred')
   const [autoReconnect, setAutoReconnect] = useState(true)
   const [reconnectInterval, setReconnectInterval] = useState(5)
@@ -1670,6 +1633,9 @@ function App(): React.JSX.Element {
     session.isConnected && detectedVideoSize?.deviceId === selectedDevice?.id
       ? detectedVideoSize
       : null
+  const portraitPreview = activeResolution
+    ? activeResolution.height > activeResolution.width
+    : DEFAULT_RESOLUTION_HEIGHT > DEFAULT_RESOLUTION_WIDTH
   const activeAirplayPid =
     airplayProcess && airplayProcess.deviceId === selectedDevice?.id ? airplayProcess.pid : null
   const visibleLogs = logKind === 'device' ? session.logs : airplayLogs
@@ -1902,7 +1868,7 @@ function App(): React.JSX.Element {
                   </Text>
                 </Group>
               </div>
-              <Group gap="xs">
+              <Group gap={8} wrap="nowrap">
                 {previewCaptured && (
                   <Badge
                     size="xs"
@@ -1913,61 +1879,64 @@ function App(): React.JSX.Element {
                     {t('captureExit')}
                   </Badge>
                 )}
+                <Tooltip label={t('editDevice')}>
+                  <ActionIcon
+                    variant="default"
+                    size={26}
+                    aria-label={t('editDevice')}
+                    onClick={() =>
+                      setDeviceDialog({
+                        opened: true,
+                        deviceId: selectedDevice.id,
+                        groupId: selectedDevice.groupId
+                      })
+                    }
+                  >
+                    <IconEdit size={15} />
+                  </ActionIcon>
+                </Tooltip>
                 <Menu position="bottom-end" shadow="md" width={230}>
                   <Menu.Target>
-                    <Tooltip label={t('deviceMenu')}>
-                      <ActionIcon variant="default" size={26} aria-label={t('deviceMenu')}>
-                        <IconAdjustmentsHorizontal size={15} />
+                    <Tooltip label={t('sendShortcut')}>
+                      <ActionIcon variant="default" size={26} aria-label={t('sendShortcut')}>
+                        <IconKeyboard size={15} />
                       </ActionIcon>
                     </Tooltip>
                   </Menu.Target>
                   <Menu.Dropdown>
-                    <Menu.Item
-                      leftSection={<IconEdit size={15} />}
-                      onClick={() =>
-                        setDeviceDialog({
-                          opened: true,
-                          deviceId: selectedDevice.id,
-                          groupId: selectedDevice.groupId
-                        })
-                      }
-                    >
-                      {t('editDevice')}
-                    </Menu.Item>
-                    <Menu.Divider />
-                    <Menu.Sub>
-                      <Menu.Sub.Target>
-                        <Menu.Sub.Item
-                          leftSection={<IconKeyboard size={15} />}
-                          rightSection={<IconChevronRight size={14} />}
+                    <Menu.Label>{t('systemShortcuts')}</Menu.Label>
+                    {systemShortcuts.map((shortcut) => {
+                      const ShortcutIcon = shortcut.icon
+                      return (
+                        <Menu.Item
+                          key={shortcut.label}
+                          leftSection={<ShortcutIcon size={15} />}
+                          rightSection={
+                            <Text size="xs" c="dimmed" ff="monospace">
+                              {shortcut.keys}
+                            </Text>
+                          }
+                          disabled={!session.isConnected}
+                          onClick={() => requestShortcut(shortcut)}
                         >
-                          {t('sendShortcut')}
-                        </Menu.Sub.Item>
-                      </Menu.Sub.Target>
-                      <Menu.Sub.Dropdown>
-                        <Menu.Label>{t('systemShortcuts')}</Menu.Label>
-                        {systemShortcuts.map((shortcut) => {
-                          const ShortcutIcon = shortcut.icon
-                          return (
-                            <Menu.Item
-                              key={shortcut.label}
-                              leftSection={<ShortcutIcon size={15} />}
-                              rightSection={
-                                <Text size="xs" c="dimmed" ff="monospace">
-                                  {shortcut.keys}
-                                </Text>
-                              }
-                              disabled={!session.isConnected}
-                              onClick={() => requestShortcut(shortcut)}
-                            >
-                              {t(shortcut.label)}
-                            </Menu.Item>
-                          )
-                        })}
-                      </Menu.Sub.Dropdown>
-                    </Menu.Sub>
+                          {t(shortcut.label)}
+                        </Menu.Item>
+                      )
+                    })}
                   </Menu.Dropdown>
                 </Menu>
+                <Tooltip label={t(audioMuted ? 'airplayUnmute' : 'airplayMute')}>
+                  <ActionIcon
+                    variant={audioMuted ? 'light' : 'default'}
+                    color={audioMuted ? 'red' : undefined}
+                    size={26}
+                    aria-label={t(audioMuted ? 'airplayUnmute' : 'airplayMute')}
+                    aria-pressed={audioMuted}
+                    onClick={() => setAudioMuted((muted) => !muted)}
+                  >
+                    {audioMuted ? <IconVolumeOff size={15} /> : <IconVolume size={15} />}
+                  </ActionIcon>
+                </Tooltip>
                 <Button
                   size="compact-sm"
                   variant={sessionActive ? 'default' : 'filled'}
@@ -1984,287 +1953,283 @@ function App(): React.JSX.Element {
                 </Button>
               </Group>
             </header>
-            <section className="device-content">
+            <section
+              className={`device-content${portraitPreview ? ' device-content--portrait' : ''}`}
+            >
               <PreviewSurface
                 device={selectedDevice}
                 target={target}
                 connected={session.isConnected}
+                audioMuted={audioMuted}
                 send={session.send}
                 onCaptureChange={setPreviewCaptured}
                 onAirplayPidChange={updateAirplayPid}
                 onVideoSizeChange={updateVideoSize}
                 t={t}
               />
-              <div className="bottom-panels">
-                <Accordion defaultValue="details" variant="separated" radius={0}>
-                  <Accordion.Item value="details">
-                    <Accordion.Control icon={<IconAdjustmentsHorizontal size={16} />}>
-                      <Group gap="xs">
+              <div className="device-panels">
+                <header className="device-panels-header">
+                  <IconAdjustmentsHorizontal size={16} />
+                  <Text component="h2" size="sm" fw={650} m={0}>
+                    {t('deviceDetails')}
+                  </Text>
+                </header>
+                <div className="device-panels-content">
+                  <div className="device-details-grid">
+                    <section className="device-detail-section">
+                      <Group gap={7}>
+                        <IconActivityHeartbeat size={15} />
                         <Text size="sm" fw={650}>
-                          {t('deviceDetails')}
+                          {t('deviceInfo')}
                         </Text>
                       </Group>
-                    </Accordion.Control>
-                    <Accordion.Panel>
-                      <div className="device-details-grid">
-                        <section className="device-detail-section">
-                          <Group gap={7}>
-                            <IconActivityHeartbeat size={15} />
-                            <Text size="sm" fw={650}>
-                              {t('deviceInfo')}
-                            </Text>
-                          </Group>
-                          <div className="info-grid">
-                            <div className="status-strip">
-                              <div className="status-cell">
-                                <IconCpu size={16} />
-                                <span>
-                                  <Text size="xs" c="dimmed">
-                                    {t('firmware')}
-                                  </Text>
-                                  <Text
-                                    size="xs"
-                                    fw={600}
-                                    c={session.firmwareVersion === null ? 'dimmed' : undefined}
-                                  >
-                                    {session.firmwareVersion ?? t('unknown')}
-                                  </Text>
-                                </span>
-                              </div>
-                              <div className="status-cell">
-                                <IconCode size={16} />
-                                <span>
-                                  <Text size="xs" c="dimmed">
-                                    {t('protocol')}
-                                  </Text>
-                                  <Text
-                                    size="xs"
-                                    fw={600}
-                                    c={session.protocolVersion === null ? 'dimmed' : undefined}
-                                  >
-                                    {session.protocolVersion ?? t('unknown')}
-                                  </Text>
-                                </span>
-                              </div>
-                              <div className="status-cell">
-                                <IconDeviceMobile size={16} />
-                                <span>
-                                  <Text size="xs" c="dimmed">
-                                    {t('resolution')}
-                                  </Text>
-                                  <Text
-                                    size="xs"
-                                    fw={600}
-                                    c={activeResolution === null ? 'dimmed' : undefined}
-                                  >
-                                    {activeResolution?.width && activeResolution.height
-                                      ? `${activeResolution.width} × ${activeResolution.height}`
-                                      : t('unknown')}
-                                  </Text>
-                                </span>
-                              </div>
-                            </div>
-                            <div className="status-strip">
-                              <div className="status-cell">
-                                <IconUsb size={16} />
-                                <span>
-                                  <Text size="xs" c="dimmed">
-                                    {t('usb')}
-                                  </Text>
-                                  <Text
-                                    size="xs"
-                                    fw={600}
-                                    c={connectionStatusColor(session.usbConnected)}
-                                  >
-                                    {session.usbConnected === null
-                                      ? t('unknown')
-                                      : session.usbConnected
-                                        ? t('available')
-                                        : t('unavailable')}
-                                  </Text>
-                                </span>
-                              </div>
-                              <div className="status-cell">
-                                <IconBluetooth size={16} />
-                                <span>
-                                  <Text size="xs" c="dimmed">
-                                    {t('bluetooth')}
-                                  </Text>
-                                  <Text
-                                    size="xs"
-                                    fw={600}
-                                    c={connectionStatusColor(session.bleConnected)}
-                                  >
-                                    {session.bleConnected === null
-                                      ? t('unknown')
-                                      : session.bleConnected
-                                        ? t('available')
-                                        : t('unavailable')}
-                                  </Text>
-                                </span>
-                              </div>
-                              <div className="status-cell">
-                                <IconWifi size={16} />
-                                <span>
-                                  <Text size="xs" c="dimmed">
-                                    {t('latency')}
-                                  </Text>
-                                  <Text size="xs" fw={600} c={latencyStatusColor(session.latency)}>
-                                    {session.latency === null ? '—' : `${session.latency} ms`}
-                                  </Text>
-                                </span>
-                              </div>
-                            </div>
-                            <div className="airplay-settings">
-                              <Group justify="space-between" gap="xs">
-                                <Group gap={7}>
-                                  <IconBroadcast size={15} />
-                                  <Text size="sm" fw={650}>
-                                    {t('airplaySettings')}
-                                  </Text>
-                                </Group>
-                                <Group gap="md">
-                                  <Text size="xs" c="dimmed" ff="monospace">
-                                    PID {activeAirplayPid ?? '—'}
-                                  </Text>
-                                  <Text size="xs" c="dimmed">
-                                    {t('airplaySettingsHint')}
-                                  </Text>
-                                </Group>
-                              </Group>
-                              <div className="airplay-settings-grid">
-                                <div className="airplay-settings-field">
-                                  <Text className="airplay-settings-field-label">
-                                    {t('airplayMaxFps')}
-                                  </Text>
-                                  <div className="airplay-settings-field-control">
-                                    <Select
-                                      size="xs"
-                                      aria-label={t('airplayMaxFps')}
-                                      value={String(selectedDevice.airplay.maxFps)}
-                                      allowDeselect={false}
-                                      data={[
-                                        { value: '15', label: '15 fps' },
-                                        { value: '30', label: '30 fps' },
-                                        { value: '60', label: '60 fps' }
-                                      ]}
-                                      onChange={(value) => {
-                                        if (value) updateAirplaySetting('maxFps', Number(value))
-                                      }}
-                                    />
-                                  </div>
-                                </div>
-                                <div className="airplay-settings-field">
-                                  <Text className="airplay-settings-field-label">
-                                    {t('airplayAudio')}
-                                  </Text>
-                                  <div className="airplay-settings-field-control">
-                                    <Switch
-                                      size="xs"
-                                      label={t('airplayAudioEnabled')}
-                                      checked={selectedDevice.airplay.audioEnabled}
-                                      onChange={(event) =>
-                                        updateAirplaySetting(
-                                          'audioEnabled',
-                                          event.currentTarget.checked
-                                        )
-                                      }
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                            <Divider />
-                            <Group gap={8} justify="flex-end">
-                              <Button
-                                variant="default"
-                                size="xs"
-                                loading={airplayRestarting}
-                                leftSection={<IconReload size={14} />}
-                                disabled={!session.isConnected || airplayRestarting}
-                                onClick={() => {
-                                  setAirplayRestarting(true)
-                                  void window.api.airplay
-                                    .restart()
-                                    .catch((error: unknown) => {
-                                      console.error('Unable to restart AirPlay receiver', error)
-                                    })
-                                    .finally(() => setAirplayRestarting(false))
-                                }}
-                              >
-                                {t('restartAirplayService')}
-                              </Button>
-                              <Button
-                                variant="default"
-                                size="xs"
-                                disabled={!session.isConnected}
-                                onClick={() =>
-                                  session.send({
-                                    type: 'release_all',
-                                    target
-                                  })
-                                }
-                              >
-                                {t('releaseAll')}
-                              </Button>
-                              <Tooltip label={t('refresh')}>
-                                <ActionIcon
-                                  variant="default"
-                                  size={30}
-                                  disabled={!session.isConnected}
-                                  onClick={() => session.send({ type: 'get_status' })}
-                                >
-                                  <IconRefresh size={14} />
-                                </ActionIcon>
-                              </Tooltip>
-                            </Group>
-                          </div>
-                        </section>
-                        <section className="device-detail-section device-log-section">
-                          <Group justify="space-between" gap="xs">
-                            <Group gap={8}>
-                              <IconRoute size={15} />
-                              <SegmentedControl
-                                size="xs"
-                                value={logKind}
-                                data={[
-                                  { value: 'device', label: t('deviceLog') },
-                                  { value: 'airplay', label: t('airplayLogs') }
-                                ]}
-                                onChange={(value) => setLogKind(value as 'device' | 'airplay')}
-                              />
-                            </Group>
-                            <Button
-                              variant="subtle"
-                              color="gray"
-                              size="compact-xs"
-                              onClick={() => {
-                                if (logKind === 'device') session.clearLogs()
-                                else setAirplayLogs([])
-                              }}
-                            >
-                              {t('clear')}
-                            </Button>
-                          </Group>
-                          <ScrollArea
-                            h={264}
-                            className="log-view"
-                            scrollbarSize={5}
-                            viewportRef={logViewportRef}
-                          >
-                            {visibleLogs.length ? (
-                              <pre>{visibleLogs.join('\n')}</pre>
-                            ) : (
-                              <Text size="xs" c="dimmed" ta="center" py="lg">
-                                {logKind === 'device' ? t('noLogs') : t('noAirplayLogs')}
+                      <div className="info-grid">
+                        <div className="status-strip">
+                          <div className="status-cell">
+                            <IconCpu size={16} />
+                            <span>
+                              <Text size="xs" c="dimmed">
+                                {t('firmware')}
                               </Text>
-                            )}
-                          </ScrollArea>
-                        </section>
+                              <Text
+                                size="xs"
+                                fw={600}
+                                c={session.firmwareVersion === null ? 'dimmed' : undefined}
+                              >
+                                {session.firmwareVersion ?? t('unknown')}
+                              </Text>
+                            </span>
+                          </div>
+                          <div className="status-cell">
+                            <IconCode size={16} />
+                            <span>
+                              <Text size="xs" c="dimmed">
+                                {t('protocol')}
+                              </Text>
+                              <Text
+                                size="xs"
+                                fw={600}
+                                c={session.protocolVersion === null ? 'dimmed' : undefined}
+                              >
+                                {session.protocolVersion ?? t('unknown')}
+                              </Text>
+                            </span>
+                          </div>
+                          <div className="status-cell">
+                            <IconDeviceMobile size={16} />
+                            <span>
+                              <Text size="xs" c="dimmed">
+                                {t('resolution')}
+                              </Text>
+                              <Text
+                                size="xs"
+                                fw={600}
+                                c={activeResolution === null ? 'dimmed' : undefined}
+                              >
+                                {activeResolution?.width && activeResolution.height
+                                  ? `${activeResolution.width} × ${activeResolution.height}`
+                                  : t('unknown')}
+                              </Text>
+                            </span>
+                          </div>
+                          <div className="status-cell">
+                            <IconUsb size={16} />
+                            <span>
+                              <Text size="xs" c="dimmed">
+                                {t('usb')}
+                              </Text>
+                              <Text
+                                size="xs"
+                                fw={600}
+                                c={connectionStatusColor(session.usbConnected)}
+                              >
+                                {session.usbConnected === null
+                                  ? t('unknown')
+                                  : session.usbConnected
+                                    ? t('available')
+                                    : t('unavailable')}
+                              </Text>
+                            </span>
+                          </div>
+                          <div className="status-cell">
+                            <IconBluetooth size={16} />
+                            <span>
+                              <Text size="xs" c="dimmed">
+                                {t('bluetooth')}
+                              </Text>
+                              <Text
+                                size="xs"
+                                fw={600}
+                                c={connectionStatusColor(session.bleConnected)}
+                              >
+                                {session.bleConnected === null
+                                  ? t('unknown')
+                                  : session.bleConnected
+                                    ? t('available')
+                                    : t('unavailable')}
+                              </Text>
+                            </span>
+                          </div>
+                          <div className="status-cell">
+                            <IconWifi size={16} />
+                            <span>
+                              <Text size="xs" c="dimmed">
+                                {t('latency')}
+                              </Text>
+                              <Text size="xs" fw={600} c={latencyStatusColor(session.latency)}>
+                                {session.latency === null ? '—' : `${session.latency} ms`}
+                              </Text>
+                            </span>
+                          </div>
+                        </div>
+                        <div className="airplay-settings">
+                          <Group justify="space-between" gap="xs">
+                            <Group gap={7}>
+                              <IconBroadcast size={15} />
+                              <Text size="sm" fw={650}>
+                                {t('airplaySettings')}
+                              </Text>
+                            </Group>
+                            <Group gap="md">
+                              <Text size="xs" c="dimmed" ff="monospace">
+                                PID {activeAirplayPid ?? '—'}
+                              </Text>
+                              <Text size="xs" c="dimmed">
+                                {t('airplaySettingsHint')}
+                              </Text>
+                            </Group>
+                          </Group>
+                          <div className="airplay-settings-grid">
+                            <div className="airplay-settings-field">
+                              <Text fz={13} className="airplay-settings-field-label">
+                                {t('airplayMaxFps')}
+                              </Text>
+                              <div className="airplay-settings-field-control">
+                                <Select
+                                  size="xs"
+                                  aria-label={t('airplayMaxFps')}
+                                  value={String(selectedDevice.airplay.maxFps)}
+                                  allowDeselect={false}
+                                  data={[
+                                    { value: '15', label: '15 fps' },
+                                    { value: '30', label: '30 fps' },
+                                    { value: '60', label: '60 fps' }
+                                  ]}
+                                  onChange={(value) => {
+                                    if (value) updateAirplaySetting('maxFps', Number(value))
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <div className="airplay-settings-field">
+                              <Text fz={13} className="airplay-settings-field-label">
+                                {t('airplayAudio')}
+                              </Text>
+                              <div className="airplay-settings-field-control">
+                                <Switch
+                                  size="xs"
+                                  label={t('airplayAudioEnabled')}
+                                  checked={selectedDevice.airplay.audioEnabled}
+                                  onChange={(event) =>
+                                    updateAirplaySetting(
+                                      'audioEnabled',
+                                      event.currentTarget.checked
+                                    )
+                                  }
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <Divider />
+                        <Group gap={8} justify="flex-end">
+                          <Button
+                            variant="default"
+                            size="xs"
+                            loading={airplayRestarting}
+                            leftSection={<IconReload size={14} />}
+                            disabled={!session.isConnected || airplayRestarting}
+                            onClick={() => {
+                              setAirplayRestarting(true)
+                              void window.api.airplay
+                                .restart(selectedDevice.airplay)
+                                .catch((error: unknown) => {
+                                  console.error('Unable to restart AirPlay receiver', error)
+                                })
+                                .finally(() => setAirplayRestarting(false))
+                            }}
+                          >
+                            {t('restartAirplayService')}
+                          </Button>
+                          <Button
+                            variant="default"
+                            size="xs"
+                            disabled={!session.isConnected}
+                            onClick={() =>
+                              session.send({
+                                type: 'release_all',
+                                target
+                              })
+                            }
+                          >
+                            {t('releaseAll')}
+                          </Button>
+                          <Tooltip label={t('refresh')}>
+                            <ActionIcon
+                              variant="default"
+                              size={30}
+                              disabled={!session.isConnected}
+                              onClick={() => session.send({ type: 'get_status' })}
+                            >
+                              <IconRefresh size={14} />
+                            </ActionIcon>
+                          </Tooltip>
+                        </Group>
                       </div>
-                    </Accordion.Panel>
-                  </Accordion.Item>
-                </Accordion>
+                    </section>
+                    <section className="device-detail-section device-log-section">
+                      <Group justify="space-between" gap="xs">
+                        <Group gap={8}>
+                          <IconRoute size={15} />
+                          <SegmentedControl
+                            size="xs"
+                            value={logKind}
+                            data={[
+                              { value: 'device', label: t('deviceLog') },
+                              { value: 'airplay', label: t('airplayLogs') }
+                            ]}
+                            onChange={(value) => setLogKind(value as 'device' | 'airplay')}
+                          />
+                        </Group>
+                        <Button
+                          variant="subtle"
+                          color="gray"
+                          size="compact-xs"
+                          onClick={() => {
+                            if (logKind === 'device') session.clearLogs()
+                            else setAirplayLogs([])
+                          }}
+                        >
+                          {t('clear')}
+                        </Button>
+                      </Group>
+                      <ScrollArea
+                        h={264}
+                        className="log-view"
+                        scrollbarSize={5}
+                        viewportRef={logViewportRef}
+                      >
+                        {visibleLogs.length ? (
+                          <pre>{visibleLogs.join('\n')}</pre>
+                        ) : (
+                          <Text size="xs" c="dimmed" ta="center" py="lg">
+                            {logKind === 'device' ? t('noLogs') : t('noAirplayLogs')}
+                          </Text>
+                        )}
+                      </ScrollArea>
+                    </section>
+                  </div>
+                </div>
               </div>
             </section>
           </>

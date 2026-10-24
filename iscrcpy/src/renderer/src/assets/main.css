@@ -252,11 +252,17 @@ textarea {
   min-height: 0;
   overflow: hidden;
 }
+.device-content--portrait {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 42%, 460px);
+  grid-template-rows: minmax(0, 1fr);
+}
 .preview-area {
   display: flex;
   flex: 1 1 0;
   align-items: center;
   justify-content: center;
+  min-width: 0;
   min-height: 0;
   padding: 16px 20px;
   overflow: hidden;
@@ -373,34 +379,25 @@ textarea {
   font-weight: 700;
   text-align: center;
 }
-.bottom-panels {
+.device-panels {
   flex: 0 0 auto;
-  overflow: hidden;
+  max-height: 55%;
+  overflow: hidden auto;
   background: var(--surface);
   border-top: 1px solid var(--border);
   box-shadow: 0 -4px 18px #262b3310;
 }
-.bottom-panels .mantine-Accordion-root {
-  --accordion-control-padding: 9px 15px;
-}
-.bottom-panels .mantine-Accordion-item {
-  margin: 0;
-  border: 0;
-  border-bottom: 1px solid var(--soft-border);
-  border-radius: 0;
-}
-.bottom-panels .mantine-Accordion-item + .mantine-Accordion-item {
-  margin-top: 0;
-}
-.bottom-panels .mantine-Accordion-control {
+.device-panels-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-height: 38px;
+  padding: 9px 15px;
   background: #fcfcfd;
 }
-.bottom-panels .mantine-Accordion-panel {
-  border-top: 1px solid #eef0f2;
-}
-.bottom-panels .mantine-Accordion-content {
+.device-panels-content {
   padding: 11px 15px 13px;
+  border-top: 1px solid var(--soft-border);
 }
 .device-details-grid {
   display: grid;
@@ -416,6 +413,25 @@ textarea {
 }
 .device-log-section {
   min-height: 0;
+}
+.device-content--portrait > .device-panels {
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  border-top: 0;
+  border-left: 1px solid var(--border);
+  box-shadow: -4px 0 18px #262b3310;
+}
+.device-content--portrait .device-details-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+.device-content--portrait .status-strip {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.device-content--portrait .status-cell > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .info-grid {
   display: grid;
@@ -465,7 +481,6 @@ textarea {
 .airplay-settings-field-label {
   height: 16px;
   color: #717987;
-  font-size: 9px;
   font-weight: 450;
   line-height: 16px;
 }
@@ -699,8 +714,8 @@ textarea {
   .sidebar,
   .device-header,
   .utility-page-header,
-  .bottom-panels,
-  .bottom-panels .mantine-Accordion-control {
+  .device-panels,
+  .device-panels-header {
     color: #e1e4e9;
     background: var(--sidebar);
   }

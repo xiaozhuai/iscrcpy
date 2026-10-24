@@ -4,12 +4,14 @@
 
 iscrcpy 用于通过局域网将 iPhone 屏幕镜像到桌面电脑，并控制 iPhone。ESP32-S3
 硬件桥接器通过 WebSocket 接收键盘和鼠标事件，再以 USB HID 或蓝牙 LE HID 设备的形式
-转发给 iPhone。AirPlay 屏幕镜像由独立管理的 UxPlay sidecar 提供，并直接显示在桌面应用中。
+转发给 iPhone。AirPlay 屏幕镜像由独立项目 uxplay-mini 提供，并直接显示在桌面应用中。
 
 桌面端提供局域网设备发现、设备库、连接管理、实时屏幕预览、输入捕获、固件与
 AirPlay 日志，以及全局连接设置。
 
 ![](screenshots/img_1.png)
+
+![](screenshots/img_2.png)
 
 ## 工作原理
 
@@ -18,15 +20,16 @@ iPhone
   |
   | 局域网 AirPlay
   v
-UxPlay sidecar（-vrtp）
+uxplay-mini（独立进程）
   |
-  | 本机 UDP 上的 H.264 RTP
+  | 本机 UDP 上的 H.264 + L16 音频 RTP/RTCP
   v
 Electron 主进程
   |
-  | 编码视频帧
+  | 编码视频帧 + PCM 音频
   v
 WebCodecs 解码器 -> 预览 Canvas
+Web Audio -> 系统音频输出
 
 Electron
   |
@@ -69,9 +72,12 @@ ESP32-S3 固件
 - Node.js 和 [pnpm](https://pnpm.io/)，用于运行桌面应用。
 - Electron 支持的 Windows、macOS 或 Linux 桌面环境。
 
-桌面应用会随硬件控制连接启动和停止 UxPlay，并通过 `-vrtp` 将 H.264 RTP 发送到
-本机 UDP 端口。UxPlay 不会打开原生播放窗口；Electron 主进程负责 RTP 解包，
-渲染进程使用 WebCodecs 解码并绘制到现有预览区域。
+桌面应用会随硬件控制连接启动和停止 uxplay-mini。mini 将 H.264 视频（PT 96）和
+L16 PCM 音频（PT 97、44.1 kHz 双声道）分别发送到本机 RTP/RTCP 端口对。
+Electron 主进程负责解包，渲染进程使用 WebCodecs 绘制视频、Web Audio 播放音频，
+不再需要 GStreamer。desktop 不启用 `--h265`；音频保持默认关闭，可在设备的
+AirPlay 设置中开启并重启接收器应用设置。独立接收器的构建产物定位、打包和测试说明
+见 [桌面开发说明](iscrcpy/README.md)。
 
 ### iPhone 设置
 

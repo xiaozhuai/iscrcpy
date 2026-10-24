@@ -5,7 +5,7 @@
 iscrcpy mirrors an iPhone screen to a desktop computer and controls the iPhone over a
 local network. An ESP32-S3 bridge receives keyboard and mouse events through a WebSocket
 connection and forwards them to the iPhone as a USB or Bluetooth LE HID device. AirPlay
-screen mirroring is handled by a separately managed UxPlay sidecar and rendered directly
+screen mirroring is handled by the independent uxplay-mini project and rendered directly
 inside the desktop application.
 
 The desktop app provides device discovery, a saved device library, connection management,
@@ -14,6 +14,8 @@ settings.
 
 ![](screenshots/img_1.png)
 
+![](screenshots/img_2.png)
+
 ## How it works
 
 ```text
@@ -21,15 +23,16 @@ iPhone
   |
   | AirPlay over the local network
   v
-UxPlay sidecar (-vrtp)
+uxplay-mini (independent process)
   |
-  | H.264 RTP over localhost UDP
+  | H.264 + L16 audio RTP/RTCP over localhost UDP
   v
 Electron main process
   |
-  | encoded video frames
+  | encoded video frames + PCM audio
   v
 WebCodecs decoder -> preview canvas
+Web Audio -> system audio output
 
 Electron
   |
@@ -73,10 +76,13 @@ desktop app starts an AirPlay receiver named `iscrcpy for {device name}`.
 - Node.js and [pnpm](https://pnpm.io/) for the desktop application.
 - A current Windows, macOS, or Linux desktop environment supported by Electron.
 
-The desktop app starts and stops UxPlay with the hardware connection, using `-vrtp` to
-send H.264 RTP to a local UDP port. UxPlay does not open a native playback window. The
-Electron main process depacketizes RTP, and the renderer uses WebCodecs to decode and
-draw frames into the existing preview area.
+The desktop app starts and stops uxplay-mini with the hardware connection. Mini sends
+H.264 video (PT 96) and L16 PCM audio (PT 97, 44.1 kHz stereo) to separate local RTP/RTCP
+port pairs. Electron depacketizes RTP; the renderer draws video with WebCodecs and plays
+audio with Web Audio. GStreamer is no longer needed. Desktop does not enable `--h265`.
+Audio remains off by default; enable it in the device's AirPlay settings and restart the
+receiver to apply the setting. See the [desktop development guide](iscrcpy/README.md)
+for independent receiver artifacts, packaging and tests.
 
 ### iPhone setup
 

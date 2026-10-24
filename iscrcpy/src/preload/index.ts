@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { AirplayConfig, AirplayState, AirplayVideoChunk } from '../shared/airplay'
+import type {
+  AirplayAudioChunk,
+  AirplayConfig,
+  AirplayState,
+  AirplayVideoChunk
+} from '../shared/airplay'
 
 // Custom APIs for renderer
 const api = {
@@ -17,7 +22,8 @@ const api = {
     start: (deviceName: string, config: AirplayConfig): Promise<AirplayState> =>
       ipcRenderer.invoke('airplay:start', deviceName, config),
     stop: (): Promise<void> => ipcRenderer.invoke('airplay:stop'),
-    restart: (): Promise<AirplayState> => ipcRenderer.invoke('airplay:restart'),
+    restart: (config?: AirplayConfig): Promise<AirplayState> =>
+      ipcRenderer.invoke('airplay:restart', config),
     onState: (listener: (state: AirplayState) => void): (() => void) => {
       const wrapped = (_event: Electron.IpcRendererEvent, state: AirplayState): void => {
         listener(state)
@@ -31,6 +37,12 @@ const api = {
       }
       ipcRenderer.on('airplay:video', wrapped)
       return () => ipcRenderer.removeListener('airplay:video', wrapped)
+    },
+    onAudio: (listener: (chunk: AirplayAudioChunk) => void): (() => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, chunk: AirplayAudioChunk): void =>
+        listener(chunk)
+      ipcRenderer.on('airplay:audio', wrapped)
+      return () => ipcRenderer.removeListener('airplay:audio', wrapped)
     },
     onLog: (listener: (message: string) => void): (() => void) => {
       const wrapped = (_event: Electron.IpcRendererEvent, message: string): void => {
