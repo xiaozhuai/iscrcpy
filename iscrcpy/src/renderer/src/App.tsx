@@ -56,6 +56,7 @@ import {
   IconWifi
 } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import appIcon from './assets/app-icon.png'
 import {
   DEFAULT_AIRPLAY_CONFIG,
   normalizeAirplayConfig,
@@ -1108,9 +1109,7 @@ function AboutPage({ t }: AboutPageProps): React.JSX.Element {
       </div>
       <Paper className="utility-card" p="lg" radius="md">
         <Group gap="md" wrap="nowrap">
-          <div className="brand-mark">
-            <IconDeviceDesktop size={18} stroke={1.8} />
-          </div>
+          <img className="brand-mark brand-mark--about" src={appIcon} alt="" draggable={false} />
           <div>
             <Text fw={700}>{t('appName')}</Text>
             <Text size="sm" c="dimmed">
@@ -1669,9 +1668,7 @@ function App(): React.JSX.Element {
         }}
       >
         <div className="sidebar-header">
-          <div className="brand-mark">
-            <IconDeviceDesktop size={18} stroke={1.8} />
-          </div>
+          <img className="brand-mark" src={appIcon} alt="" draggable={false} />
           <Text fw={700} size="sm">
             {t('appName')}
           </Text>

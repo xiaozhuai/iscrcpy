@@ -60,7 +60,7 @@ textarea {
 }
 .sidebar-header {
   display: grid;
-  grid-template-columns: 28px 1fr auto;
+  grid-template-columns: 32px 1fr auto;
   align-items: center;
   gap: 8px;
   height: 42px;
@@ -72,14 +72,15 @@ textarea {
   gap: 2px;
 }
 .brand-mark {
-  display: grid;
-  place-items: center;
-  width: 27px;
-  height: 27px;
-  color: white;
-  border-radius: 8px;
-  background: linear-gradient(145deg, #4388ee, #2567cf);
-  box-shadow: 0 2px 7px #2b70d83d;
+  display: block;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+.brand-mark--about {
+  width: 64px;
+  height: 64px;
 }
 .sidebar-section-title {
   display: flex;

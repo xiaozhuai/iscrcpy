@@ -152,7 +152,7 @@ function createWindow(): void {
     ...(process.platform === 'darwin'
       ? { trafficLightPosition: { x: 14, y: 13 } }
       : { titleBarOverlay: { color: '#f7f8fa', symbolColor: '#30343b', height: 38 } }),
-    ...(process.platform === 'linux' ? { icon } : {}),
+    ...(process.platform !== 'darwin' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -185,7 +185,11 @@ function createWindow(): void {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('io.github.xiaozhuai.iscrcpy')
+
+  if (is.dev && process.platform === 'darwin') {
+    app.dock?.setIcon(icon)
+  }
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
