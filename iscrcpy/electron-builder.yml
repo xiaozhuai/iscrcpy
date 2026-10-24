@@ -14,6 +14,8 @@ files:
   - '!.cache/**'
 beforePack: scripts/before-pack.cjs
 extraResources:
+  - from: ../LICENSE
+    to: LICENSE.iscrcpy
   - from: resources/uxplay-mini/${os}-${arch}
     to: uxplay-mini
     filter:

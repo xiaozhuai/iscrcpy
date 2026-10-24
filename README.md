@@ -232,3 +232,13 @@ pio run -e esp32-s3-n16r8-factory
   changes, or the user disconnects.
 - Network-level access control, encrypted input transport, and desktop credential
   storage are not currently implemented.
+
+## License
+
+Original code and documentation in this repository are licensed under the
+[MIT License](LICENSE). Copyright (c) 2026 xiaozhuai.
+
+Third-party components retain their own licenses. In particular, the independent
+uxplay-mini receiver bundled with the desktop app remains subject to its GPL and
+third-party license/source obligations. See the
+[desktop distribution notes](iscrcpy/README.md#build).
