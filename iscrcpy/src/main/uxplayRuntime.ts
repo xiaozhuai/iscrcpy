@@ -80,7 +80,7 @@ export async function findRuntime(
     }
   }
   throw new Error(
-    'uxplay-mini is missing. Run npm run runtime:prepare to download a Release, ' +
+    'uxplay-mini is missing. Run pnpm run runtime:prepare to download a Release, ' +
       'or set UXPLAY_MINI_BINARY for local development.'
   )
 }
